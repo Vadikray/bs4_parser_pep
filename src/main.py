@@ -5,29 +5,22 @@ import logging
 import requests_cache
 from bs4 import BeautifulSoup
 from tqdm import tqdm
+from requests import RequestException
 from urllib.parse import urljoin
 
-from constants import BASE_DIR, MAIN_DOC_URL, MAIN_PEP_URL, EXPECTED_STATUS
+from constants import (BASE_DIR, MAIN_DOC_URL, MAIN_PEP_URL,
+                        EXPECTED_STATUS, WHATSNEW, DOWNLOAD_HTML,
+                        DOWNLOAD)
 from configs import configure_argument_parser, configure_logging
 from outputs import control_output
 from utils import get_response, find_tag
+from exceptions import ContentExclusion
 
 
 def whats_new(session):
-    whats_new_url = urljoin(MAIN_DOC_URL, "whatsnew/")
-    response = get_response(session, whats_new_url)
-    if response is None:
-        return
-    soup = BeautifulSoup(response.text, features="lxml")
-
-    main_div = find_tag(soup, "section", attrs={"id": "what-s-new-in-python"})
-
-    div_with_ul = find_tag(main_div, "div", attrs={"class": "toctree-wrapper"})
-
-    sections_by_python = div_with_ul.find_all(
-        "li",
-        attrs={"class": "toctree-l1"}
-    )
+    whats_new_url = urljoin(MAIN_DOC_URL, WHATSNEW)
+    soup = get_soup(session,whats_new_url)
+    sections_by_python = soup.select('#what-s-new-in-python div.toctree-wrapper li.toctree-l1')
     results = [("Ссылка на статью", "Заголовок", "Редактор, Автор")]
 
     for section in tqdm(sections_by_python):
@@ -38,29 +31,29 @@ def whats_new(session):
         if response is None:
             continue
         soup = BeautifulSoup(response.text, "lxml")
-        h1 = find_tag(soup, "h1")
-        dl = find_tag(soup, "dl")
-        dl_text = dl.text.replace("\n", " ")
-        results.append((version_link, h1.text, dl_text))
+        results.append((version_link,
+                        find_tag(soup, "h1").text,
+                        find_tag(soup, "dl").text.replace("\n", " "))
+        )
 
     return results
 
 
 def latest_versions(session):
-    response = get_response(session, MAIN_DOC_URL)
-    if response is None:
-        return
-    soup = BeautifulSoup(response.text, "lxml")
+    soup = get_soup(session,MAIN_DOC_URL)
     sidebar = find_tag(soup, "div", {"class": "sphinxsidebarwrapper"})
     ul_tags = sidebar.find_all("ul")
+
     for ul in ul_tags:
         if "All versions" in ul.text:
             a_tags = ul.find_all("a")
             break
     else:
-        raise Exception("Ничего не нашлось")
+        raise ContentExclusion("Ничего не нашлось")
+
     results = [("Ссылка на документацию", "Версия", "Статус")]
     pattern = r"Python (?P<version>\d\.\d+) \((?P<status>.*)\)"
+
     for a_tag in a_tags:
         link = a_tag["href"]
         text_match = re.search(pattern, a_tag.text)
@@ -74,11 +67,8 @@ def latest_versions(session):
 
 
 def download(session):
-    downloads_url = urljoin(MAIN_DOC_URL, "download.html")
-    response = get_response(session, downloads_url)
-    if response is None:
-        return
-    soup = BeautifulSoup(response.text, features="lxml")
+    downloads_url = urljoin(MAIN_DOC_URL, DOWNLOAD_HTML)
+    soup = get_soup(session,downloads_url)
     main_tag = find_tag(soup, "div", {"role": "main"})
     table_tag = find_tag(main_tag, "table", {"class": "docutils"})
     pdf_a4_tag = find_tag(
@@ -89,7 +79,7 @@ def download(session):
     pdf_a4_link = pdf_a4_tag["href"]
     archive_url = urljoin(downloads_url, pdf_a4_link)
     filename = archive_url.split("/")[-1]
-    downloads_dir = BASE_DIR / "downloads"
+    downloads_dir = BASE_DIR / DOWNLOAD
     downloads_dir.mkdir(exist_ok=True)
     archive_path = downloads_dir / filename
     response = session.get(archive_url)
@@ -100,10 +90,7 @@ def download(session):
 
 
 def pep(session):
-    response = get_response(session, MAIN_PEP_URL)
-    if response is None:
-        return
-    soup = BeautifulSoup(response.text, features="lxml")
+    soup = get_soup(session,MAIN_PEP_URL)
     section_tag = find_tag(soup, "section", {"id": "numerical-index"})
     tr_tags = section_tag.find_all("tr")
     total_by_status = collections.defaultdict(int)
@@ -113,11 +100,7 @@ def pep(session):
         preview_status = td_tag.text[1:]
         href = find_tag(tr_tag, "a")["href"]
         pep_link = urljoin(MAIN_PEP_URL, href)
-        response_for_pep = get_response(session, pep_link)
-
-        if response_for_pep is None:
-            return
-        soup = BeautifulSoup(response_for_pep.text, features="lxml")
+        soup = get_soup(session,pep_link)
         dl_tag = find_tag(soup, "dl")
         for tag in dl_tag:
             if tag.name == "dt" and tag.text == "Status:":
@@ -147,7 +130,18 @@ MODE_TO_FUNCTION = {
     "download": download,
     "pep": pep,
 }
+def get_soup(session,url):
+    try:
+        response = get_response(session, url)
+        if response is None:
+            return
+    except RequestException:
+        logging.exception(
+            f"Возникла ошибка при загрузке страницы {url}", stack_info=True
+        )
+    soup = BeautifulSoup(response.text, features="lxml")
 
+    return soup
 
 def main():
     configure_logging()
