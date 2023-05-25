@@ -4,7 +4,7 @@ import csv
 
 from prettytable import PrettyTable
 
-from constants import BASE_DIR, DATETIME_FORMAT,PRETTY,FILE,RESULTS
+from constants import BASE_DIR, DATETIME_FORMAT, PRETTY, FILE, RESULTS
 
 
 def control_output(results, cli_args):

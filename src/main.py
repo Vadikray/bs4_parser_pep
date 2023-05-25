@@ -9,8 +9,7 @@ from requests import RequestException
 from urllib.parse import urljoin
 
 from constants import (BASE_DIR, MAIN_DOC_URL, MAIN_PEP_URL,
-                        EXPECTED_STATUS, WHATSNEW, DOWNLOAD_HTML,
-                        DOWNLOAD)
+                       EXPECTED_STATUS, WHATSNEW, DOWNLOAD_HTML, DOWNLOAD)
 from configs import configure_argument_parser, configure_logging
 from outputs import control_output
 from utils import get_response, find_tag
@@ -19,8 +18,10 @@ from exceptions import ContentExclusion
 
 def whats_new(session):
     whats_new_url = urljoin(MAIN_DOC_URL, WHATSNEW)
-    soup = get_soup(session,whats_new_url)
-    sections_by_python = soup.select('#what-s-new-in-python div.toctree-wrapper li.toctree-l1')
+    soup = get_soup(session, whats_new_url)
+    sections_by_python = soup.select(
+        '#what-s-new-in-python div.toctree-wrapper li.toctree-l1'
+    )
     results = [("Ссылка на статью", "Заголовок", "Редактор, Автор")]
 
     for section in tqdm(sections_by_python):
@@ -34,13 +35,12 @@ def whats_new(session):
         results.append((version_link,
                         find_tag(soup, "h1").text,
                         find_tag(soup, "dl").text.replace("\n", " "))
-        )
-
+                       )
     return results
 
 
 def latest_versions(session):
-    soup = get_soup(session,MAIN_DOC_URL)
+    soup = get_soup(session, MAIN_DOC_URL)
     sidebar = find_tag(soup, "div", {"class": "sphinxsidebarwrapper"})
     ul_tags = sidebar.find_all("ul")
 
@@ -68,7 +68,7 @@ def latest_versions(session):
 
 def download(session):
     downloads_url = urljoin(MAIN_DOC_URL, DOWNLOAD_HTML)
-    soup = get_soup(session,downloads_url)
+    soup = get_soup(session, downloads_url)
     main_tag = find_tag(soup, "div", {"role": "main"})
     table_tag = find_tag(main_tag, "table", {"class": "docutils"})
     pdf_a4_tag = find_tag(
@@ -90,7 +90,7 @@ def download(session):
 
 
 def pep(session):
-    soup = get_soup(session,MAIN_PEP_URL)
+    soup = get_soup(session, MAIN_PEP_URL)
     section_tag = find_tag(soup, "section", {"id": "numerical-index"})
     tr_tags = section_tag.find_all("tr")
     total_by_status = collections.defaultdict(int)
@@ -100,7 +100,7 @@ def pep(session):
         preview_status = td_tag.text[1:]
         href = find_tag(tr_tag, "a")["href"]
         pep_link = urljoin(MAIN_PEP_URL, href)
-        soup = get_soup(session,pep_link)
+        soup = get_soup(session, pep_link)
         dl_tag = find_tag(soup, "dl")
         for tag in dl_tag:
             if tag.name == "dt" and tag.text == "Status:":
@@ -130,7 +130,9 @@ MODE_TO_FUNCTION = {
     "download": download,
     "pep": pep,
 }
-def get_soup(session,url):
+
+
+def get_soup(session, url):
     try:
         response = get_response(session, url)
         if response is None:
@@ -142,6 +144,7 @@ def get_soup(session,url):
     soup = BeautifulSoup(response.text, features="lxml")
 
     return soup
+
 
 def main():
     configure_logging()
